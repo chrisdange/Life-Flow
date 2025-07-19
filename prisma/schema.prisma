@@ -1,0 +1,206 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Enums
+enum BloodType {
+  A_POSITIVE @map("A+")
+  A_NEGATIVE @map("A-")
+  B_POSITIVE @map("B+")
+  B_NEGATIVE @map("B-")
+  AB_POSITIVE @map("AB+")
+  AB_NEGATIVE @map("AB-")
+  O_POSITIVE @map("O+")
+  O_NEGATIVE @map("O-")
+
+  @@map("blood_type_enum")
+}
+
+enum UserRole {
+  DONOR    @map("donor")
+  HOSPITAL @map("hospital")
+  ADMIN    @map("admin")
+
+  @@map("user_role_enum")
+}
+
+enum RequestPriority {
+  LOW    @map("low")
+  MEDIUM @map("medium")
+  HIGH   @map("high")
+  URGENT @map("urgent")
+
+  @@map("request_priority_enum")
+}
+
+enum RequestStatus {
+  OPEN      @map("open")
+  FULFILLED @map("fulfilled")
+  CANCELLED @map("cancelled")
+
+  @@map("request_status_enum")
+}
+
+// Models
+model User {
+  id        String   @id @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  fullName  String   @map("full_name") @db.VarChar(255)
+  phone     String?  @db.VarChar(20)
+  role      UserRole @default(DONOR)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  donor         Donor?
+  hospital      Hospital?
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Donor {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String    @unique @map("user_id") @db.Uuid
+  bloodType              BloodType @map("blood_type")
+  dateOfBirth            DateTime  @map("date_of_birth") @db.Date
+  weightKg               Int?      @map("weight_kg")
+  lastDonationDate       DateTime? @map("last_donation_date") @db.Date
+  nextEligibleDate       DateTime? @map("next_eligible_date") @db.Date
+  medicalConditions      String[]  @map("medical_conditions")
+  emergencyContactName   String?   @map("emergency_contact_name") @db.VarChar(255)
+  emergencyContactPhone  String?   @map("emergency_contact_phone") @db.VarChar(20)
+  address                String?
+  city                   String?   @db.VarChar(100)
+  state                  String?   @db.VarChar(100)
+  zipCode                String?   @map("zip_code") @db.VarChar(20)
+  isActive               Boolean   @default(true) @map("is_active")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  donations Donation[]
+
+  @@index([bloodType])
+  @@index([nextEligibleDate])
+  @@map("donors")
+}
+
+model Hospital {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @unique @map("user_id") @db.Uuid
+  name          String   @db.VarChar(255)
+  licenseNumber String   @unique @map("license_number") @db.VarChar(100)
+  address       String
+  city          String   @db.VarChar(100)
+  state         String   @db.VarChar(100)
+  zipCode       String   @map("zip_code") @db.VarChar(20)
+  phone         String   @db.VarChar(20)
+  email         String?  @db.VarChar(255)
+  website       String?  @db.VarChar(255)
+  capacity      Int      @default(0)
+  isVerified    Boolean  @default(false) @map("is_verified")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bloodInventory BloodInventory[]
+  bloodRequests  BloodRequest[]
+  donations      Donation[]
+
+  @@map("hospitals")
+}
+
+model BloodInventory {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hospitalId     String    @map("hospital_id") @db.Uuid
+  bloodType      BloodType @map("blood_type")
+  unitsAvailable Int       @default(0) @map("units_available")
+  unitsReserved  Int       @default(0) @map("units_reserved")
+  expiryDate     DateTime? @map("expiry_date") @db.Date
+  lastUpdated    DateTime  @default(now()) @map("last_updated") @db.Timestamptz(6)
+
+  // Relations
+  hospital Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@unique([hospitalId, bloodType])
+  @@map("blood_inventory")
+}
+
+model BloodRequest {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hospitalId    String          @map("hospital_id") @db.Uuid
+  bloodType     BloodType       @map("blood_type")
+  unitsNeeded   Int             @map("units_needed")
+  unitsFulfilled Int            @default(0) @map("units_fulfilled")
+  priority      RequestPriority @default(MEDIUM)
+  status        RequestStatus   @default(OPEN)
+  reason        String?
+  neededBy      DateTime?       @map("needed_by") @db.Timestamptz(6)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  hospital  Hospital   @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  donations Donation[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([bloodType])
+  @@map("blood_requests")
+}
+
+model Donation {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  donorId                String    @map("donor_id") @db.Uuid
+  hospitalId             String    @map("hospital_id") @db.Uuid
+  bloodRequestId         String?   @map("blood_request_id") @db.Uuid
+  donationDate           DateTime  @map("donation_date") @db.Date
+  unitsDonated           Int       @default(1) @map("units_donated")
+  bloodType              BloodType @map("blood_type")
+  hemoglobinLevel        Decimal?  @map("hemoglobin_level") @db.Decimal(3, 1)
+  bloodPressureSystolic  Int?      @map("blood_pressure_systolic")
+  bloodPressureDiastolic Int?      @map("blood_pressure_diastolic")
+  notes                  String?
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  donor        Donor         @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  hospital     Hospital      @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  bloodRequest BloodRequest? @relation(fields: [bloodRequestId], references: [id], onDelete: SetNull)
+
+  @@index([donorId])
+  @@index([hospitalId])
+  @@index([donationDate])
+  @@map("donations")
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @db.VarChar(255)
+  message   String
+  type      String   @db.VarChar(50)
+  isRead    Boolean  @default(false) @map("is_read")
+  relatedId String?  @map("related_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
